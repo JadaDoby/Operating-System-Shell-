@@ -4,6 +4,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
+
 void Execute_Command(tokenlist *tokens);
 
 int main()
@@ -13,7 +14,7 @@ int main()
         printf("> "); // replace this with shell prompt in part 1
         char *input = get_input();
         tokenlist *tokens = get_tokens(input);
-        External_Command(tokens);
+        Execute_Command(tokens);
         free(input);
         free_tokens(tokens);
     }
