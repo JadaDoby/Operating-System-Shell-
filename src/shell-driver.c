@@ -27,6 +27,6 @@ void Execute_Command(tokenlist *tokens)
     if (process_id == 0) // targeting child process
     {
         char **arguments = tokens->items;
-        execvp(arguments[0], arguments);
+        execvp(arguments[0], arguments);               //idk if we can use execvp here, so its just there rn for testing
     }
 }
