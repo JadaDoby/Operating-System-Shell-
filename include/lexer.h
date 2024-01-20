@@ -84,3 +84,74 @@ void free_tokens(tokenlist *tokens)
     free(tokens->items);
     free(tokens);
 }
+
+
+
+// Function to search for a command in the directories listed in $PATH
+char *getPathSearch(tokenlist *cmd)
+{
+
+    char *path = NULL;
+    path = (char *)malloc(sizeof(char) * (strlen(getenv("PATH")) + 1));
+    strcpy(path, getenv("PATH"));
+    char *tokens = strtok(path, ":");
+
+    while (tokens != NULL)
+    {
+
+        if (tokens[0] == '~')
+        {
+            char fullTokenPath[(strlen(tokens) - 1) + (strlen(getenv("HOME"))) + 2];
+            strcpy(fullTokenPath, expand_tilde(tokens));
+            tokens = (char *)malloc(sizeof(char) * strlen(fullTokenPath) + 1);
+            strcpy(tokens, fullTokenPath);
+        }
+
+        char *slash = "/";
+        int size = strlen(tokens);
+        int cmdSize = strlen(cmd->items[0]);
+        int slashSize = strlen(slash);
+        int fullPathSize = size + cmdSize + slashSize + 1;
+        char *temp = (char *)malloc(sizeof(char) * fullPathSize);
+        temp[0] = '\0';
+        strcat(temp, tokens);
+
+        strcat(temp, slash);
+        strcat(temp, cmd->items[0]);
+        if (access(temp, F_OK | R_OK) != -1)
+        {
+            return temp;
+        }
+        tokens = strtok(NULL, ":");
+    }
+
+    printf("%s\n", "Command Not Found");
+    return NULL;
+}
+
+char *expand_tilde(const char *token)
+{
+    char *path = NULL;
+    if (strcmp(token, "~") == 0)
+    {
+        // If the token is "~", expand it to the home directory
+        path = (char *)malloc(sizeof(char) * (strlen(getenv("HOME")) + 1));
+        strcpy(path, getenv("HOME"));
+    }
+    else if (strncmp(token, "~/", 2) == 0)
+    {
+        // If the token starts with "~/", expand it to the home directory + remaining path
+        const char *homeEnv = getenv("HOME");
+        const char *remainingPath = token + 1; // Skip the "~/"
+        int fullLength = strlen(homeEnv) + strlen(remainingPath) + 1;
+        path = (char *)malloc(sizeof(char) * fullLength);
+        strcpy(path, homeEnv);
+        strcat(path, remainingPath);
+    }
+    else
+    {
+        path = strdup(token);
+    }
+
+    return path;
+}
