@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include<string.h>
 #include <sys/types.h>
-#include <bits/waitflags.h>
+//#include <bits/waitflags.h>
 
 
 typedef struct {
@@ -152,6 +152,8 @@ char *getPathSearch(tokenlist *cmd)
         strcat(temp, cmd->items[0]);
         if (access(temp, F_OK | R_OK) != -1)
         {
+            free(path);
+            free(temp);
             return temp;
         }
         tokens = strtok(NULL, ":");
