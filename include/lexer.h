@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include<string.h>
+#include <sys/types.h>
+#include <bits/waitflags.h>
 
 
 typedef struct {
@@ -16,6 +18,35 @@ tokenlist * get_tokens(char *input);
 tokenlist * new_tokenlist(void);
 void add_token(tokenlist *tokens, char *item);
 void free_tokens(tokenlist *tokens);
+
+
+void Execute_Command(tokenlist *tokens);
+char *getPathSearch(tokenlist *cmd);
+char *expand_tilde(const char *token);
+
+
+
+
+void Execute_Command(tokenlist *tokens){
+    pid_t pid;
+    int status;
+    pid = fork();
+    if (pid == 0) {
+        // Child process
+        if (execv(getPathSearch(tokens), tokens->items) == -1) {
+            perror("Error executing command");
+        }
+        exit(EXIT_FAILURE);
+    } else if (pid < 0) {
+        // Error forking
+        perror("Error forking");
+    } else {
+        // Parent process
+        do {
+            waitpid(pid, &status, WUNTRACED);
+        } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+}
+}
 
 char *get_input(void)
 {
@@ -94,7 +125,8 @@ char *getPathSearch(tokenlist *cmd)
     char *path = NULL;
     path = (char *)malloc(sizeof(char) * (strlen(getenv("PATH")) + 1));
     strcpy(path, getenv("PATH"));
-    char *tokens = strtok(path, ":");
+    const char *tokens = strtok(path, ":");
+    
 
     while (tokens != NULL)
     {
@@ -126,7 +158,10 @@ char *getPathSearch(tokenlist *cmd)
     }
 
     printf("%s\n", "Command Not Found");
-    return NULL;
+    if(path != NULL){
+        free(path);
+    }
+    return path;
 }
 
 char *expand_tilde(const char *token)
