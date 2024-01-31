@@ -17,7 +17,7 @@
 - **Assigned to**: [Jada Doby, Shelley Bercy]
 
 ### Part 3: [Tidle Expansion]
-- **Responsibilities**: [Implement Bash tilde (~) expansion for paths, facilitating the transformation of tokens beginning with "~" or "~/".]
+- **Responsibilities**: [In Bash, tilde (~) may appear at the beginning of a path, and it expands to the environment variable $HOME. For example, tokens [“ls”, “~/dir1”] should expand to [“ls”, “/home/grads/mnguyen/dir1”]. An output example of tilde expansion is:]
 - **Assigned to**: [Shelley Bercy,Jada Doby]
 
 ### Part 4: [$PATH Search]
