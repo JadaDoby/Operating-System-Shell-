@@ -6,6 +6,7 @@
 #include<string.h>
 #include <sys/types.h>
 //#include <bits/waitflags.h>
+#include <sys/wait.h>
 
 
 typedef struct {
@@ -14,7 +15,7 @@ typedef struct {
 } tokenlist;
 
 char * get_input(void);
-tokenlist * get_tokens(char *input);
+tokenlist *get_tokens(char *input);
 tokenlist * new_tokenlist(void);
 void add_token(tokenlist *tokens, char *item);
 void free_tokens(tokenlist *tokens);
@@ -115,57 +116,61 @@ void free_tokens(tokenlist *tokens)
     free(tokens->items);
     free(tokens);
 }
-
-
-
-// Function to search for a command in the directories listed in $PATH
 char *getPathSearch(tokenlist *cmd)
 {
-
     char *path = NULL;
     path = (char *)malloc(sizeof(char) * (strlen(getenv("PATH")) + 1));
     strcpy(path, getenv("PATH"));
-    const char *tokens = strtok(path, ":");
-    
+    const char *pathCopy = strdup(path);  // Make a copy for tokenization
+
+    const char *tokens = strtok(pathCopy, ":");
 
     while (tokens != NULL)
     {
-
+        char *temp;
         if (tokens[0] == '~')
         {
             char fullTokenPath[(strlen(tokens) - 1) + (strlen(getenv("HOME"))) + 2];
             strcpy(fullTokenPath, expand_tilde(tokens));
-            tokens = (char *)malloc(sizeof(char) * strlen(fullTokenPath) + 1);
-            strcpy(tokens, fullTokenPath);
+            temp = (char *)malloc(sizeof(char) * (strlen(fullTokenPath) + 1));
+            strcpy(temp, fullTokenPath);
+        }
+        else
+        {
+            temp = strdup(tokens);
         }
 
         char *slash = "/";
-        int size = strlen(tokens);
+        int size = strlen(temp);
         int cmdSize = strlen(cmd->items[0]);
         int slashSize = strlen(slash);
         int fullPathSize = size + cmdSize + slashSize + 1;
-        char *temp = (char *)malloc(sizeof(char) * fullPathSize);
-        temp[0] = '\0';
-        strcat(temp, tokens);
+        char *fullPath = (char *)malloc(sizeof(char) * fullPathSize);
+        fullPath[0] = '\0';
+        strcat(fullPath, temp);
+        strcat(fullPath, slash);
+        strcat(fullPath, cmd->items[0]);
 
-        strcat(temp, slash);
-        strcat(temp, cmd->items[0]);
-        if (access(temp, F_OK | R_OK) != -1)
+        if (access(fullPath, F_OK | R_OK) != -1)
         {
             free(path);
             free(temp);
-            return temp;
+            free(pathCopy);
+            return fullPath;
         }
+
+        free(temp);
+        free(fullPath);
         tokens = strtok(NULL, ":");
     }
 
     printf("%s\n", "Command Not Found");
-    if(path != NULL){
-        free(path);
-    }
-    return path;
+    free(path);
+    free(pathCopy);
+    return NULL;
 }
 
+//
 char *expand_tilde(const char *token)
 {
     char *path = NULL;
@@ -191,4 +196,124 @@ char *expand_tilde(const char *token)
     }
 
     return path;
+}
+
+void redirection(tokenlist *cmd1, tokenlist *cmd2) {
+    int pipefd[2];
+    pid_t pid;
+
+    // create a pipe
+    if (pipe(pipefd) == -1) {
+        perror("pipe");
+        exit(EXIT_FAILURE);
+    }
+
+    // fork the 1st process
+    pid = fork();
+
+    if (pid == -1) {
+        perror("fork");
+        exit(EXIT_FAILURE);
+    }
+
+    if (pid == 0) { // Child process (cmd1)
+        // Close the write end of the pipe (cmd1 only reads)
+        close(pipefd[1]);
+
+        // Redirect standard input to read from the pipe
+        dup2(pipefd[0], STDIN_FILENO);
+
+        // Close unused file descriptors
+        close(pipefd[0]);
+
+        // Execute cmd1
+        if (execv(cmd1->items[0], cmd1->items) == -1) {
+            perror("Error executing cmd1");
+            exit(EXIT_FAILURE);
+        }
+    } else { // Parent process
+        // Close the read end of the pipe (parent only writes)
+        close(pipefd[0]);
+
+        // Fork the 2nd process
+        pid = fork();
+
+        if (pid == -1) {
+            perror("fork");
+            exit(EXIT_FAILURE);
+        }
+
+        if (pid == 0) { // Child process (cmd2)
+            // Redirect standard output to write to the pipe
+            dup2(pipefd[1], STDOUT_FILENO);
+
+            // Close unused file descriptors
+            close(pipefd[1]);
+
+            // Execute cmd2
+            if (execv(cmd2->items[0], cmd2->items) == -1) {
+                perror("Error executing cmd2");
+                exit(EXIT_FAILURE);
+            }
+        } else { // Parent process
+            // Close the write end of the pipe (parent only reads)
+            close(pipefd[1]);
+
+            // Wait for both child processes to finish
+            wait(NULL);
+            wait(NULL);
+        }
+    }
+}
+
+// Function to expand tokens that start with '$'
+char *expandvariabletokens(const char *token) {
+    if (token[0] == '$') {
+        // Skip the '$' character
+        const char *environmentname = token + 1;
+
+        // Get the value of the environment variable
+        const char *environmentvalue = getenv(environmentname);
+
+        // If the environment variable is found, return its value
+        if (environmentvalue != NULL) {
+            return strdup(environmentvalue);
+        }
+    }
+    // Return the token as is if not starting with '$' or not found in the environment
+    return strdup(token);
+}
+
+tokenlist *expand_the_variables(char *input) {
+    // Allocate memory for a copy of the input string
+    char *buf = (char *)malloc(strlen(input) + 1);
+    strcpy(buf, input);
+
+    // Create a new tokenlist to store the tokens
+    tokenlist *tokens = new_tokenlist();
+
+    // Tokenize the input string using space (' ') as a delimiter
+    char *tok = strtok(buf, " ");
+    while (tok != NULL) {
+        // Expand tokens before adding to the list
+        char *expanded_token = expandvariabletokens(tok);
+
+        // Add the expanded token to the tokenlist
+        add_token(tokens, expanded_token);
+
+        // Print intermediate values for debugging
+        printf("Original Token: %s, Expanded Token: %s\n", tok, expanded_token);
+
+        // Free the memory allocated for the expanded token
+        free(expanded_token);
+
+        // Move to the next token
+        tok = strtok(NULL, " ");
+    }
+
+    // Free the memory allocated for the input string copy
+    free(buf);
+
+    // Return the tokenlist containing the expanded tokens
+    return tokens;
 }
