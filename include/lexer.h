@@ -3,50 +3,49 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <unistd.h>
-#include<string.h>
+#include <string.h>
 #include <sys/types.h>
-//#include <bits/waitflags.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 
-
-typedef struct {
-    char ** items;
+typedef struct
+{
+    char **items;
     size_t size;
 } tokenlist;
 
-char * get_input(void);
+char *get_input(void);
 tokenlist *get_tokens(char *input);
-tokenlist * new_tokenlist(void);
+tokenlist *new_tokenlist(void);
 void add_token(tokenlist *tokens, char *item);
 void free_tokens(tokenlist *tokens);
-
 
 void Execute_Command(tokenlist *tokens);
 char *getPathSearch(tokenlist *cmd);
 char *expand_tilde(const char *token);
+void ioRedirection(tokenlist *tokens);
 
-
-
-
-void Execute_Command(tokenlist *tokens){
+void Execute_Command(tokenlist *tokens)
+{
     pid_t pid;
     int status;
     pid = fork();
-    if (pid == 0) {
-        // Child process
-        if (execv(getPathSearch(tokens), tokens->items) == -1) {
+    if (pid == 0)
+    {
+        if (execv(getPathSearch(tokens), tokens->items) == -1)
+        {
             perror("Error executing command");
         }
         exit(EXIT_FAILURE);
-    } else if (pid < 0) {
-        // Error forking
+    }
+    else if (pid < 0)
+    {
         perror("Error forking");
-    } else {
-        // Parent process
-        do {
-            waitpid(pid, &status, WUNTRACED);
-        } while (!WIFEXITED(status) && !WIFSIGNALED(status));
-}
+    }
+    else
+    {
+        waitpid(pid, &status, 0);
+    }
 }
 
 char *get_input(void)
@@ -121,7 +120,7 @@ char *getPathSearch(tokenlist *cmd)
     char *path = NULL;
     path = (char *)malloc(sizeof(char) * (strlen(getenv("PATH")) + 1));
     strcpy(path, getenv("PATH"));
-    const char *pathCopy = strdup(path);  // Make a copy for tokenization
+    const char *pathCopy = strdup(path); // Make a copy for tokenization
 
     const char *tokens = strtok(pathCopy, ":");
 
@@ -198,77 +197,111 @@ char *expand_tilde(const char *token)
     return path;
 }
 
-void redirection(tokenlist *cmd1, tokenlist *cmd2) {
-    int pipefd[2];
-    pid_t pid;
 
-    // create a pipe
-    if (pipe(pipefd) == -1) {
-        perror("pipe");
-        exit(EXIT_FAILURE);
-    }
+//io redirection
+void ioRedirection(tokenlist *tokens)
+{
+	int size = tokens->size;
+	tokenlist *command = new_tokenlist();
+	for (int i = 0; i < size; i++)
+	{
 
-    // fork the 1st process
-    pid = fork();
-
-    if (pid == -1) {
-        perror("fork");
-        exit(EXIT_FAILURE);
-    }
-
-    if (pid == 0) { // Child process (cmd1)
-        // Close the write end of the pipe (cmd1 only reads)
-        close(pipefd[1]);
-
-        // Redirect standard input to read from the pipe
-        dup2(pipefd[0], STDIN_FILENO);
-
-        // Close unused file descriptors
-        close(pipefd[0]);
-
-        // Execute cmd1
-        if (execv(cmd1->items[0], cmd1->items) == -1) {
-            perror("Error executing cmd1");
-            exit(EXIT_FAILURE);
-        }
-    } else { // Parent process
-        // Close the read end of the pipe (parent only writes)
-        close(pipefd[0]);
-
-        // Fork the 2nd process
-        pid = fork();
-
-        if (pid == -1) {
-            perror("fork");
-            exit(EXIT_FAILURE);
-        }
-
-        if (pid == 0) { // Child process (cmd2)
-            // Redirect standard output to write to the pipe
-            dup2(pipefd[1], STDOUT_FILENO);
-
-            // Close unused file descriptors
-            close(pipefd[1]);
-
-            // Execute cmd2
-            if (execv(cmd2->items[0], cmd2->items) == -1) {
-                perror("Error executing cmd2");
-                exit(EXIT_FAILURE);
-            }
-        } else { // Parent process
-            // Close the write end of the pipe (parent only reads)
-            close(pipefd[1]);
-
-            // Wait for both child processes to finish
-            wait(NULL);
-            wait(NULL);
-        }
-    }
+		if (strcmp(tokens->items[i], ">") != 0 && strcmp(tokens->items[i], "<") != 0)
+		{
+			add_token(command, tokens->items[i]);
+		}
+		if (strcmp(tokens->items[i], ">") == 0)
+		{
+			if (i + 1 == size - 1)
+			{
+				int outfd = dup(STDOUT_FILENO);
+				close(STDOUT_FILENO);
+				int fd = open(tokens->items[i + 1], O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+				Execute_Command(command);
+				dup2(outfd, STDOUT_FILENO);
+				close(outfd);
+				free_tokens(command);
+				break;
+			}
+			else if (strcmp(tokens->items[i + 2], "<") == 0)
+			{
+				if (access(tokens->items[i + 3], F_OK | R_OK) == -1)
+				{
+					fprintf(stderr, "no such file or directory: %s\n", tokens->items[i + 3]);
+					return;
+				}
+				int infd = dup(STDIN_FILENO);
+				close(STDIN_FILENO);
+				int fd = open(tokens->items[i + 3], O_RDWR, S_IRUSR);
+				dup2(infd, STDIN_FILENO);
+				close(infd);
+				int outfd = dup(STDOUT_FILENO);
+				close(STDOUT_FILENO);
+				int fd2 = open(tokens->items[i + 1], O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+				Execute_Command(command);
+				dup2(outfd, STDOUT_FILENO);
+				close(outfd);
+				free_tokens(command);
+				break;
+			}
+			else
+			{
+				perror("Error: no file");
+				return;
+			}
+		}
+		if (strcmp(tokens->items[i], "<") == 0)
+		{
+			if (i + 1 == size - 1)
+			{
+				if (access(tokens->items[i + 1], F_OK | R_OK) == -1)
+				{
+					fprintf(stderr, "no such file or directory: %s\n", tokens->items[i+1]);
+					return;
+				}
+				int infd = dup(STDIN_FILENO);
+				close(STDIN_FILENO);
+				int fd = open(tokens->items[i + 1], O_RDWR , S_IRUSR);
+				Execute_Command(command);
+				dup2(infd, STDIN_FILENO);
+				close(infd);
+				free_tokens(command);
+				break;
+			}
+			else if(strcmp(tokens->items[i+2], ">") == 0){
+				if (access(tokens->items[i+1], F_OK | R_OK) == -1)
+				{
+					fprintf(stderr, "no such file or directory: %s\n", tokens->items[i+1]);
+					return;
+				}
+				int infd = dup(STDIN_FILENO);
+				close(STDIN_FILENO);
+				int fd = open(tokens->items[i + 1], O_RDWR, S_IRUSR);
+				dup2(infd, STDIN_FILENO);
+				close(infd);
+				int outfd = dup(STDOUT_FILENO);
+				close(STDOUT_FILENO);
+				int fd2 = open(tokens->items[i + 3], O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+				Execute_Command(command);
+				dup2(outfd, STDOUT_FILENO);
+				close(outfd);
+				free_tokens(command);
+				break;
+			}
+			else
+			{
+				perror("Error");
+				return;
+			}
+		}
+	}
 }
 
 // Function to expand tokens that start with '$'
-char *expandvariabletokens(const char *token) {
-    if (token[0] == '$') {
+char *expandvariabletokens(const char *token)
+{
+    if (token[0] == '$')
+    {
         // Skip the '$' character
         const char *environmentname = token + 1;
 
@@ -276,7 +309,8 @@ char *expandvariabletokens(const char *token) {
         const char *environmentvalue = getenv(environmentname);
 
         // If the environment variable is found, return its value
-        if (environmentvalue != NULL) {
+        if (environmentvalue != NULL)
+        {
             return strdup(environmentvalue);
         }
     }
@@ -284,7 +318,8 @@ char *expandvariabletokens(const char *token) {
     return strdup(token);
 }
 
-tokenlist *expand_the_variables(char *input) {
+tokenlist *expand_the_variables(char *input)
+{
     // Allocate memory for a copy of the input string
     char *buf = (char *)malloc(strlen(input) + 1);
     strcpy(buf, input);
@@ -294,7 +329,8 @@ tokenlist *expand_the_variables(char *input) {
 
     // Tokenize the input string using space (' ') as a delimiter
     char *tok = strtok(buf, " ");
-    while (tok != NULL) {
+    while (tok != NULL)
+    {
         // Expand tokens before adding to the list
         char *expanded_token = expandvariabletokens(tok);
 
