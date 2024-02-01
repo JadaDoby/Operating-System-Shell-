@@ -6,6 +6,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 
 typedef struct
@@ -19,6 +20,7 @@ tokenlist *get_tokens(char *input);
 tokenlist *new_tokenlist(void);
 void add_token(tokenlist *tokens, char *item);
 void free_tokens(tokenlist *tokens);
+void expand_tildes(tokenlist* tokens);
 
 void Execute_Command(tokenlist *tokens);
 char *getPathSearch(tokenlist *cmd);
@@ -32,11 +34,11 @@ void Execute_Command(tokenlist *tokens)
     pid = fork();
     if (pid == 0)
     {
-        if (execv(getPathSearch(tokens), tokens->items) == -1)
+        int execID = execv(getPathSearch(tokens), tokens->items);
+        if(execID == -1)
         {
-            perror("Error executing command");
+            exit(EXIT_FAILURE);
         }
-        exit(EXIT_FAILURE);
     }
     else if (pid < 0)
     {
@@ -47,6 +49,7 @@ void Execute_Command(tokenlist *tokens)
         waitpid(pid, &status, 0);
     }
 }
+
 
 char *get_input(void)
 {
@@ -170,10 +173,24 @@ char *getPathSearch(tokenlist *cmd)
 }
 
 //
+
+void expand_tildes(tokenlist* tokens)
+{
+    for (int i = 0; i < tokens->size; i++)
+    {
+        if (tokens->items[i][0] == '~')
+        {
+            char *expandedTilde= expand_tilde(tokens->items[i]);
+            free(tokens->items[i]);
+            tokens->items[i] = expandedTilde;
+        }
+    }
+}
+
 char *expand_tilde(const char *token)
 {
     char *path = NULL;
-    if (strcmp(token, "~") == 0)
+    if (strcmp(token, "~") == 0 && strlen(token) == 1)
     {
         // If the token is "~", expand it to the home directory
         path = (char *)malloc(sizeof(char) * (strlen(getenv("HOME")) + 1));

@@ -3,6 +3,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#define MAX_JOBS 10
+#define MAX_COMMAND_LEN 1024
+
+int globalJobCount = 0;
 
 int main()
 {
@@ -48,13 +52,23 @@ int main()
         char *input = get_input();
         char checkforIO = '<';
         char checkforIO2 = '>';
+        char checkfortilde = '~';
+        bool checkforBg = false;
         const char *result = strchr(input, checkforIO);
         const char *result2 = strchr(input, checkforIO2);
+
+        
+        if(input[strlen(input)-1] == checkforBg)
+        {
+            checkforBg = true;
+            input[strlen(input)-1] = '\0';
+        }
 
         printf("whole input: %s\n", input);
 
         // Expand environment variables in tokens
         tokenlist *tokens = get_tokens(input);
+        expand_tildes(tokens);
         /*
         for (int i = 0; i < tokens->size; i++) {
             printf("token %d: (%s)\n", i, tokens->items[i]);
@@ -65,8 +79,13 @@ int main()
         {
             ioRedirection(tokens);
         }
+        else if(checkforBg)
+        {
+            
+        }
         else
         {
+
             Execute_Command(tokens);
         }
 
