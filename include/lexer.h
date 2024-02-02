@@ -31,4 +31,5 @@ void Execute_Command(tokenlist *tokens, bool isBgProcess);
 char *getPathSearch(tokenlist *cmd);
 char *expand_tilde(const char *token);
 void ioRedirection(tokenlist *tokens,bool isBgProcess);
-
+tokenlist *expand_the_variables(tokenlist *tokens);
+void pipingcommand(tokenlist *tokens);
