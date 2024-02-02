@@ -33,3 +33,17 @@ char *expand_tilde(const char *token);
 void ioRedirection(tokenlist *tokens,bool isBgProcess);
 tokenlist *expand_the_variables(tokenlist *tokens);
 void pipingcommand(tokenlist *tokens);
+tokenlist *expand_the_variables(tokenlist* tokens)
+{
+    int size = tokens->size;
+    char* temp = NULL;
+
+    for (int i = 0; i < size; i++)
+    {
+        if(tokens->items[i][0]=='$'){
+            temp = (char*)malloc(sizeof(char)*strlen(getenv(tokens->items[i][0])) + 1);
+            temp->items[i] = (char*)malloc(sizeof(char)*strlen(getenv(tokens->items[i][0])) + 1);
+            strcpy(temp,getenv(tokens->items[i][0]));
+            strcpy(temp->items,temp);
+        }
+    }
