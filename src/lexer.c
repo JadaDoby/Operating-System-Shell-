@@ -56,7 +56,6 @@ int main()
         bool checkforBg = false;
         const char *result = strchr(input, checkforIO);
         const char *result2 = strchr(input, checkforIO2);
-
        
         if(input[strlen(input)-1] == '&')
         {
@@ -69,15 +68,22 @@ int main()
         // Expand environment variables in tokens
         tokenlist *tokens = get_tokens(input);
         expand_tildes(tokens);
-        /*
-        for (int i = 0; i < tokens->size; i++) {
-            printf("token %d: (%s)\n", i, tokens->items[i]);
-        }
+        expand_the_variables(tokens);
 
-       */
+        int hasPipe=0;
+          for (int i = 0; i < tokens->size; i++) {
+            if (strcmp(tokens->items[i], "|") == 0) {
+                hasPipe = 1;
+                break;
+            }
+          }
+      
         if (result != NULL || result2 != NULL && !checkforBg)
         {
             ioRedirection(tokens,checkforBg);
+        }
+        else if(hasPipe){
+            pipingcommand(tokens);
         }
         else  if(strcmp(input,"jobs") == 0){
             jobsCommand(checkforBg);
@@ -461,7 +467,6 @@ void ioRedirection(tokenlist *tokens, bool isBgProcess)
 	}
 }
 
-// Function to expand tokens that start with '$'
 char *expandvariabletokens(const char *token)
 {
     if (token[0] == '$')
@@ -475,48 +480,154 @@ char *expandvariabletokens(const char *token)
         // If the environment variable is found, return its value
         if (environmentvalue != NULL)
         {
-            return strdup(environmentvalue);
+            // Tokenize the environment value and add each part separately
+            tokenlist *tempTokens = new_tokenlist();
+            char *tok = strtok((char *)environmentvalue, " ");
+            while (tok != NULL)
+            {
+                add_token(tempTokens, tok);
+                tok = strtok(NULL, " ");
+            }
+
+            // Concatenate the tokens into a single string
+            int totalLength = 1; // for the null terminator
+            for (int i = 0; i < tempTokens->size; i++)
+            {
+                totalLength += strlen(tempTokens->items[i]) + 1; // +1 for space or null terminator
+            }
+
+            char *expandedValue = (char *)malloc(totalLength);
+            expandedValue[0] = '\0'; // Initialize an empty string
+
+            for (int i = 0; i < tempTokens->size; i++)
+            {
+                strcat(expandedValue, tempTokens->items[i]);
+                if (i < tempTokens->size - 1)
+                {
+                    strcat(expandedValue, " "); // Add a space between tokens
+                }
+            }
+
+            // Free the temporary tokens
+            free_tokens(tempTokens);
+
+            return expandedValue;
         }
     }
     // Return the token as is if not starting with '$' or not found in the environment
     return strdup(token);
 }
 
-tokenlist *expand_the_variables(char *input)
-{
-    // Allocate memory for a copy of the input string
-    char *buf = (char *)malloc(strlen(input) + 1);
-    strcpy(buf, input);
 
-    // Create a new tokenlist to store the tokens
-    tokenlist *tokens = new_tokenlist();
+tokenlist *expand_the_variables(tokenlist *tokens) {
+    tokenlist *temp = new_tokenlist();
 
-    // Tokenize the input string using space (' ') as a delimiter
-    char *tok = strtok(buf, " ");
-    while (tok != NULL)
-    {
-        // Expand tokens before adding to the list
-        char *expanded_token = expandvariabletokens(tok);
-
-        // Add the expanded token to the tokenlist
-        add_token(tokens, expanded_token
-        );
-
-        // Print intermediate values for debugging
-        printf("Original Token: %s, Expanded Token: %s\n", tok, expanded_token);
-
-        // Free the memory allocated for the expanded token
-        free(expanded_token);
-
-        // Move to the next token
-        tok = strtok(NULL, " ");
+    for (int i = 0; i < tokens->size; i++) {
+        if (tokens->items[i][0] == '$') {
+            char *env_value = getenv(tokens->items[i] + 1);  // Skip the '$'
+            if (env_value != NULL) {
+                // Split the environment variable value into separate tokens
+                char *tok = strtok(env_value, " ");
+                while (tok != NULL) {
+                    add_token(temp, tok);
+                    tok = strtok(NULL, " ");
+                }
+            }
+        } else {
+            // If the token is not an environment variable, simply copy it to temp
+            add_token(temp, tokens->items[i]);
+        }
     }
 
-    // Free the memory allocated for the input string copy
-    free(buf);
-
-    // Return the tokenlist containing the expanded tokens
-    return tokens;
+    return temp;
 }
 
 
+void pipingcommand(tokenlist *tokens)
+{      
+  bool isBgProcess = false;
+    int pipefd[2];
+    pid_t pid1, pid2;
+    int status1, status2;
+
+    tokenlist *cmd1 = new_tokenlist();
+    tokenlist *cmd2 = new_tokenlist();
+
+    // Find the index of the pipe symbol
+    int pipeIndex = 0;
+    for (int i = 0; i < tokens->size; i++)
+    {
+        if (strcmp(tokens->items[i], "|") == 0)
+        {
+            pipeIndex = i;
+            break;
+        }
+        add_token(cmd1, tokens->items[i]);
+    }
+
+    // Populate cmd2 with the remaining tokens after the pipe symbol
+    for (int i = pipeIndex + 1; i < tokens->size; i++)
+    {
+        add_token(cmd2, tokens->items[i]);
+    }
+
+    // Create a pipe
+    if (pipe(pipefd) == -1)
+    {
+        perror("pipe");
+        exit(EXIT_FAILURE);
+    }
+
+    // First child process
+    pid1 = fork();
+    if (pid1 == 0)
+    {
+        // Close write end of the pipe
+        close(pipefd[0]);
+
+        // Redirect stdout to the write end of the pipe
+        dup2(pipefd[1], STDOUT_FILENO);
+
+        // Close unused file descriptors
+        close(pipefd[1]);
+
+        // Execute cmd1
+         Execute_Command(cmd1, isBgProcess);
+
+
+        // Exit child process
+        exit(EXIT_SUCCESS);
+    }
+
+    // Second child process
+    pid2 = fork();
+    if (pid2 == 0)
+    {
+        // Close read end of the pipe
+        close(pipefd[1]);
+
+        // Redirect stdin to the read end of the pipe
+        dup2(pipefd[0], STDIN_FILENO);
+
+        // Close unused file descriptors
+        close(pipefd[0]);
+
+        // Execute cmd2
+       Execute_Command(cmd2, isBgProcess);
+
+        // Exit child process
+        exit(EXIT_SUCCESS);
+    }
+
+    // Close unused file descriptors in the parent process
+    close(pipefd[0]);
+    close(pipefd[1]);
+
+    // Wait for both child processes to finish
+    waitpid(pid1, &status1, 0);
+    waitpid(pid2, &status2, 0);
+
+    // Free memory
+    free_tokens(cmd1);
+    free_tokens(cmd2);
+}
