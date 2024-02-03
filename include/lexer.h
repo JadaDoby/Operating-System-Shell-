@@ -26,7 +26,6 @@ tokenlist *get_tokens(char *input);
 tokenlist *new_tokenlist(void);
 void add_token(tokenlist *tokens, char *item);
 void free_tokens(tokenlist *tokens);
-void expand_tildes(tokenlist *tokens);
 void Execute_Command(tokenlist *tokens, bool isBgProcess);
 void addBGProcess(pid_t pid, const char **command, BackgroundProcess *bgProcesses);
 void BackgroundProcessHelper(BackgroundProcess *bgProcesses);
@@ -35,4 +34,5 @@ char *getPathSearch(tokenlist *cmd);
 char *expand_tilde(const char *token);
 void expand_tildeHelper(tokenlist *tokens);
 void ioRedirection(tokenlist *tokens,bool isBgProcess);
+tokenlist *expandEnvVariables(tokenlist *tokens);
 
