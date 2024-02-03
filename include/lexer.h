@@ -18,7 +18,7 @@ typedef struct
 typedef struct
 {
     pid_t pid;
-    char **command;
+    char ***command;
 } BackgroundProcess;
 
 char *get_input(void);
@@ -35,6 +35,4 @@ char *getPathSearch(tokenlist *cmd);
 char *expand_tilde(const char *token);
 void expand_tildeHelper(tokenlist *tokens);
 void ioRedirection(tokenlist *tokens,bool isBgProcess);
-tokenlist *expandEnvVariables(tokenlist *tokens);
-void piping(tokenlist *tokens, bool isBgProcess);
-void executePipedCommands(tokenlist *tokens);
+
