@@ -13,7 +13,7 @@ int main()
     {
         // Getting username
         char *username = (char *)malloc(sizeof(char) * (strlen(getenv("USER")) + 1));
-        strcpy(username,getenv("USER"));
+        strcpy(username, getenv("USER"));
 
         if (username != NULL)
         {
@@ -56,47 +56,58 @@ int main()
         bool checkforBg = false;
         const char *result = strchr(input, checkforIO);
         const char *result2 = strchr(input, checkforIO2);
-       
-        if(input[strlen(input)-1] == '&')
+
+        if (input[strlen(input) - 1] == '&')
         {
             checkforBg = true;
-            input[strlen(input)-1] = '\0';
+            input[strlen(input) - 1] = '\0';
         }
 
-        printf("whole input: %s\n", input);
+        // printf("whole input: %s\n", input);
 
         // Expand environment variables in tokens
         tokenlist *tokens = get_tokens(input);
-        expand_tildes(tokens);
-        expand_the_variables(tokens);
+        expand_tildeHelper(tokens);
+        expandEnvVariables(tokens);
 
-        int hasPipe=0;
-          for (int i = 0; i < tokens->size; i++) {
-            if (strcmp(tokens->items[i], "|") == 0) {
+        int hasPipe = 0;
+        for (int i = 0; i < tokens->size; i++)
+        {
+            if (strcmp(tokens->items[i], "|") == 0)
+            {
                 hasPipe = 1;
                 break;
             }
-          }
-      
+        }
+
         if (result != NULL || result2 != NULL && !checkforBg)
         {
-            ioRedirection(tokens,checkforBg);
+            ioRedirection(tokens, checkforBg);
         }
-        else if(hasPipe){
-            pipingcommand(tokens);
+        else if (hasPipe)
+        {
+            piping(tokens, checkforBg);
         }
-        else  if(strcmp(input,"jobs") == 0){
+        else if (strcmp(input, "jobs") == 0)
+        {
             jobsCommand(checkforBg);
         }
-        else if(checkforBg)
+        else if (checkforBg)
         {
-            Execute_Command(tokens, checkforBg);
+            if(result!=NULL || result2!=NULL){
+                ioRedirection(tokens, checkforBg);
+            }
+            else if(hasPipe){
+                piping(tokens, checkforBg);
+            }
+            else{
+                Execute_Command(tokens, checkforBg);
+            }
         }
         else
         {
             Execute_Command(tokens, checkforBg);
         }
-
 
         // Free resources
         free(username);
@@ -105,15 +116,8 @@ int main()
         BackgroundProcessHelper(bgProcesses);
     }
 
-
-
     return 0;
 }
-
-
-
-
-
 
 void Execute_Command(tokenlist *tokens, bool isBgProcess)
 {
@@ -122,7 +126,12 @@ void Execute_Command(tokenlist *tokens, bool isBgProcess)
     pid = fork();
     if (pid == 0)
     {
-        int execid = execv(getPathSearch(tokens), tokens->items);
+        char *path = getPathSearch(tokens);
+        if (path == NULL)
+        {
+            exit(EXIT_FAILURE);
+        }
+        int execid = execv(path, tokens->items);
         if (execid == -1)
         {
             perror("Error");
@@ -137,8 +146,11 @@ void Execute_Command(tokenlist *tokens, bool isBgProcess)
     {
         if (isBgProcess)
         {
-           waitpid(pid, &status, WNOHANG);
-           addBGProcess(pid, tokens->items[0], bgProcesses);
+            char ** temp = {tokens->items[0],NULL};
+            waitpid(pid, &status, WNOHANG);
+
+            addBGProcess(pid, temp, bgProcesses);
+            printf("[%d] %d\n", globalJobCount, pid);
         }
         else
         {
@@ -147,16 +159,27 @@ void Execute_Command(tokenlist *tokens, bool isBgProcess)
     }
 }
 
+// ls as
+// ls al
 
-void addBGProcess(pid_t pid, const char *command, BackgroundProcess *bgProcesses)
+void addBGProcess(pid_t pid, const char **command, BackgroundProcess *bgProcesses)
 {
-    if (globalJobCount < 10 && command != NULL) {
+     int size = 0;
+    while (command[size] != NULL) {
+        size++;
+    }
+    if (globalJobCount < 10 && command != NULL)
+    {
         bgProcesses[globalJobCount].pid = pid;
-        bgProcesses[globalJobCount].command = (char *)malloc(strlen(command) + 1);
-        strcpy(bgProcesses[globalJobCount].command, command);
-        ++globalJobCount;
-        printf("[%d] %d\n", globalJobCount, pid);
-    } else {
+
+        for(int i = 0; i < size; i++){
+            bgProcesses[globalJobCount].command[i][0] = (char *)malloc(sizeof(char)*strlen(command[i][0]) + 1);
+            strcpy(bgProcesses[globalJobCount].command[i][0], command[i][0]);
+            ++globalJobCount;
+        }
+    }
+    else
+    {
         fprintf(stderr, "Error:");
     }
 }
@@ -171,7 +194,7 @@ void BackgroundProcessHelper(BackgroundProcess *bgProcesses)
         pid = waitpid(bgProcesses[i].pid, &status, WNOHANG);
         if (pid > 0)
         {
-            printf("[%d] done %s\n", i + 1, bgProcesses[i].command);
+            printf("[%d]+ done %s\n", i + 1, bgProcesses[i].command);
 
             if (i >= 0 && i < globalJobCount)
             {
@@ -182,17 +205,21 @@ void BackgroundProcessHelper(BackgroundProcess *bgProcesses)
                 }
                 --globalJobCount;
             }
-
         }
         else if (pid < 0)
         {
             perror("Error waiting for background process");
+            return;
         }
     }
 }
 
 void jobsCommand(bool background)
 {
+    if(globalJobCount == 0){
+        printf("No background jobs\n");
+        return;
+    }
     for (int i = 0; i < globalJobCount; i++)
     {
         if (bgProcesses[i].pid != 0)
@@ -203,7 +230,6 @@ void jobsCommand(bool background)
         }
     }
 }
-
 
 char *get_input(void)
 {
@@ -234,7 +260,7 @@ tokenlist *new_tokenlist(void)
     tokenlist *tokens = (tokenlist *)malloc(sizeof(tokenlist));
     tokens->size = 0;
     tokens->items = (char **)malloc(sizeof(char *));
-    tokens->items[0] = NULL; /* make NULL terminated */
+    tokens->items[0] = NULL; 
     return tokens;
 }
 
@@ -277,7 +303,7 @@ char *getPathSearch(tokenlist *cmd)
     char *path = NULL;
     path = (char *)malloc(sizeof(char) * (strlen(getenv("PATH")) + 1));
     strcpy(path, getenv("PATH"));
-    const char *pathCopy = strdup(path); // Make a copy for tokenization
+    const char *pathCopy = strdup(path); 
 
     const char *tokens = strtok(pathCopy, ":");
 
@@ -326,9 +352,8 @@ char *getPathSearch(tokenlist *cmd)
     return NULL;
 }
 
-//
 
-void expand_tildes(tokenlist *tokens)
+void expand_tildeHelper(tokenlist *tokens)
 {
     for (int i = 0; i < tokens->size; i++)
     {
@@ -346,15 +371,13 @@ char *expand_tilde(const char *token)
     char *path = NULL;
     if (strcmp(token, "~") == 0 && strlen(token) == 1)
     {
-        // If the token is "~", expand it to the home directory
         path = (char *)malloc(sizeof(char) * (strlen(getenv("HOME")) + 1));
         strcpy(path, getenv("HOME"));
     }
     else if (strncmp(token, "~/", 2) == 0)
     {
-        // If the token starts with "~/", expand it to the home directory + remaining path
         const char *homeEnv = getenv("HOME");
-        const char *remainingPath = token + 1; // Skip the "~/"
+        const char *remainingPath = token + 1; 
         int fullLength = strlen(homeEnv) + strlen(remainingPath) + 1;
         path = (char *)malloc(sizeof(char) * fullLength);
         strcpy(path, homeEnv);
@@ -371,263 +394,268 @@ char *expand_tilde(const char *token)
 // io redirection
 void ioRedirection(tokenlist *tokens, bool isBgProcess)
 {
-	int size = tokens->size;
-	tokenlist *command = new_tokenlist();
-	for (int i = 0; i < size; i++)
-	{
-
-		if (strcmp(tokens->items[i], ">") != 0 && strcmp(tokens->items[i], "<") != 0)
-		{
-			add_token(command, tokens->items[i]);
-		}
-		if (strcmp(tokens->items[i], ">") == 0)
-		{
-			if (i + 1 == size - 1)
-			{
-				int outfd = dup(STDOUT_FILENO);
-				close(STDOUT_FILENO);
-				int fd = open(tokens->items[i + 1], O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-				Execute_Command(command,isBgProcess);
-				dup2(outfd, STDOUT_FILENO);
-				close(outfd);
-				free_tokens(command);
-				break;
-			}
-			else if (strcmp(tokens->items[i + 2], "<") == 0)
-			{
-				if (access(tokens->items[i + 3], F_OK | R_OK) == -1)
-				{
-					fprintf(stderr, "no such file or directory: %s\n", tokens->items[i + 3]);
-					return;
-				}
-				int infd = dup(STDIN_FILENO);
-				close(STDIN_FILENO);
-				int fd = open(tokens->items[i + 3], O_RDWR, S_IRUSR);
-				dup2(infd, STDIN_FILENO);
-				close(infd);
-				int outfd = dup(STDOUT_FILENO);
-				close(STDOUT_FILENO);
-				int fd2 = open(tokens->items[i + 1], O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-				Execute_Command(command,isBgProcess);
-				dup2(outfd, STDOUT_FILENO);
-				close(outfd);
-				free_tokens(command);
-				break;
-			}
-			else
-			{
-				perror("Error: no file");
-				return;
-			}
-		}
-		if (strcmp(tokens->items[i], "<") == 0)
-		{
-			if (i + 1 == size - 1)
-			{
-				if (access(tokens->items[i + 1], F_OK | R_OK) == -1)
-				{
-					fprintf(stderr, "no such file or directory: %s\n", tokens->items[i+1]);
-					return;
-				}
-				int infd = dup(STDIN_FILENO);
-				close(STDIN_FILENO);
-				int fd = open(tokens->items[i + 1], O_RDWR , S_IRUSR);
-				Execute_Command(command,isBgProcess);
-				dup2(infd, STDIN_FILENO);
-				close(infd);
-				free_tokens(command);
-				break;
-			}
-			else if(strcmp(tokens->items[i+2], ">") == 0){
-				if (access(tokens->items[i+1], F_OK | R_OK) == -1)
-				{
-					fprintf(stderr, "no such file or directory: %s\n", tokens->items[i+1]);
-					return;
-				}
-				int infd = dup(STDIN_FILENO);
-				close(STDIN_FILENO);
-				int fd = open(tokens->items[i + 1], O_RDWR, S_IRUSR);
-				dup2(infd, STDIN_FILENO);
-				close(infd);
-				int outfd = dup(STDOUT_FILENO);
-				close(STDOUT_FILENO);
-				int fd2 = open(tokens->items[i + 3], O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-				Execute_Command(command,isBgProcess);
-				dup2(outfd, STDOUT_FILENO);
-				close(outfd);
-				free_tokens(command);
-				break;
-			}
-			else
-			{
-				perror("Error");
-				return;
-			}
-		}
-	}
-}
-
-char *expandvariabletokens(const char *token)
-{
-    if (token[0] == '$')
+    int size = tokens->size;
+    if(size < 3 ){
+        perror("Error: no file");
+        return;
+    }
+    tokenlist *command = new_tokenlist();
+    for (int i = 0; i < size; i++)
     {
-        // Skip the '$' character
-        const char *environmentname = token + 1;
 
-        // Get the value of the environment variable
-        const char *environmentvalue = getenv(environmentname);
-
-        // If the environment variable is found, return its value
-        if (environmentvalue != NULL)
+        if (strcmp(tokens->items[i], ">") != 0 && strcmp(tokens->items[i], "<") != 0)
         {
-            // Tokenize the environment value and add each part separately
-            tokenlist *tempTokens = new_tokenlist();
-            char *tok = strtok((char *)environmentvalue, " ");
-            while (tok != NULL)
+            add_token(command, tokens->items[i]);
+        }
+        if (strcmp(tokens->items[i], ">") == 0)
+        {
+            if (i + 1 == size - 1)
             {
-                add_token(tempTokens, tok);
-                tok = strtok(NULL, " ");
+                int outfd = dup(STDOUT_FILENO);
+                close(STDOUT_FILENO);
+                int fd = open(tokens->items[i + 1], O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+                Execute_Command(command, isBgProcess);
+                dup2(outfd, STDOUT_FILENO);
+                close(outfd);
+                free_tokens(command);
+                break;
             }
-
-            // Concatenate the tokens into a single string
-            int totalLength = 1; // for the null terminator
-            for (int i = 0; i < tempTokens->size; i++)
+            else if (strcmp(tokens->items[i + 2], "<") == 0)
             {
-                totalLength += strlen(tempTokens->items[i]) + 1; // +1 for space or null terminator
-            }
-
-            char *expandedValue = (char *)malloc(totalLength);
-            expandedValue[0] = '\0'; // Initialize an empty string
-
-            for (int i = 0; i < tempTokens->size; i++)
-            {
-                strcat(expandedValue, tempTokens->items[i]);
-                if (i < tempTokens->size - 1)
+                if (access(tokens->items[i + 3], F_OK | R_OK) == -1)
                 {
-                    strcat(expandedValue, " "); // Add a space between tokens
+                    fprintf(stderr, "no such file or directory: %s\n", tokens->items[i + 3]);
+                    return;
                 }
+                int infd = dup(STDIN_FILENO);
+                close(STDIN_FILENO);
+                int fd = open(tokens->items[i + 3], O_RDWR, S_IRUSR);
+                dup2(infd, STDIN_FILENO);
+                close(infd);
+                int outfd = dup(STDOUT_FILENO);
+                close(STDOUT_FILENO);
+                int fd2 = open(tokens->items[i + 1], O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+                Execute_Command(command, isBgProcess);
+                dup2(outfd, STDOUT_FILENO);
+                close(outfd);
+                free_tokens(command);
+                break;
             }
-
-            // Free the temporary tokens
-            free_tokens(tempTokens);
-
-            return expandedValue;
+            else
+            {
+                perror("Error: no file");
+                return;
+            }
+        }
+        if (strcmp(tokens->items[i], "<") == 0)
+        {
+            if (i + 1 == size - 1)
+            {
+                if (access(tokens->items[i + 1], F_OK | R_OK) == -1)
+                {
+                    fprintf(stderr, "no such file or directory: %s\n", tokens->items[i + 1]);
+                    return;
+                }
+                int infd = dup(STDIN_FILENO);
+                close(STDIN_FILENO);
+                int fd = open(tokens->items[i + 1], O_RDWR, S_IRUSR);
+                Execute_Command(command, isBgProcess);
+                dup2(infd, STDIN_FILENO);
+                close(infd);
+                free_tokens(command);
+                break;
+            }
+            else if (strcmp(tokens->items[i + 2], ">") == 0)
+            {
+                if (access(tokens->items[i + 1], F_OK | R_OK) == -1)
+                {
+                    fprintf(stderr, "no such file or directory: %s\n", tokens->items[i + 1]);
+                    return;
+                }
+                int infd = dup(STDIN_FILENO);
+                close(STDIN_FILENO);
+                int fd = open(tokens->items[i + 1], O_RDWR, S_IRUSR);
+                dup2(infd, STDIN_FILENO);
+                close(infd);
+                int outfd = dup(STDOUT_FILENO);
+                close(STDOUT_FILENO);
+                int fd2 = open(tokens->items[i + 3], O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+                Execute_Command(command, isBgProcess);
+                dup2(outfd, STDOUT_FILENO);
+                close(outfd);
+                free_tokens(command);
+                break;
+            }
+            else
+            {
+                perror("Error");
+                return;
+            }
         }
     }
-    // Return the token as is if not starting with '$' or not found in the environment
-    return strdup(token);
 }
 
-
-tokenlist *expand_the_variables(tokenlist *tokens) {
-    tokenlist *temp = new_tokenlist();
-
-    for (int i = 0; i < tokens->size; i++) {
-        if (tokens->items[i][0] == '$') {
-            char *env_value = getenv(tokens->items[i] + 1);  // Skip the '$'
-            if (env_value != NULL) {
-                // Split the environment variable value into separate tokens
-                char *tok = strtok(env_value, " ");
-                while (tok != NULL) {
-                    add_token(temp, tok);
-                    tok = strtok(NULL, " ");
-                }
-            }
-        } else {
-            // If the token is not an environment variable, simply copy it to temp
-            add_token(temp, tokens->items[i]);
+tokenlist *expandEnvVariables(tokenlist *tokens)
+{
+    int size = tokens->size;
+    char *temp = NULL;
+    for (int i = 0; i < size; i++)
+    {
+        if (tokens->items[i][0] == '$')
+        {
+            temp = (char *)malloc(sizeof(char) * (strlen(getenv(tokens->items[i] + 1)) + 1));
+            strcpy(temp, getenv(tokens->items[i] + 1));
+            tokens->items[i] = temp;
         }
     }
-
-    return temp;
+    return tokens;
 }
 
-
-void pipingcommand(tokenlist *tokens)
-{      
-  bool isBgProcess = false;
-    int pipefd[2];
-    pid_t pid1, pid2;
-    int status1, status2;
-
+void piping(tokenlist *tokens, bool isBgProcess)
+{
     tokenlist *cmd1 = new_tokenlist();
+    int index = 0;
     tokenlist *cmd2 = new_tokenlist();
+    tokenlist *cmd3 = new_tokenlist();
 
-    // Find the index of the pipe symbol
-    int pipeIndex = 0;
     for (int i = 0; i < tokens->size; i++)
     {
-        if (strcmp(tokens->items[i], "|") == 0)
+        index++;
+        if (strcmp(tokens->items[i], "|") != 0)
         {
-            pipeIndex = i;
+            add_token(cmd1, tokens->items[i]);
+        }
+        else
+        {
             break;
         }
-        add_token(cmd1, tokens->items[i]);
     }
 
-    // Populate cmd2 with the remaining tokens after the pipe symbol
-    for (int i = pipeIndex + 1; i < tokens->size; i++)
+    for (int i = index; i < tokens->size; i++)
     {
-        add_token(cmd2, tokens->items[i]);
+        index++;
+        if (strcmp(tokens->items[i], "|") != 0)
+        {
+            add_token(cmd2, tokens->items[i]);
+        }
+        else
+        {
+            break;
+        }
     }
 
-    // Create a pipe
-    if (pipe(pipefd) == -1)
+    int fd[2];
+    int fd2[2];
+    if (pipe(fd) == -1)
     {
         perror("pipe");
         exit(EXIT_FAILURE);
     }
+    if (index < tokens->size)
+    {
+        if (pipe(fd2) == -1)
+        {
+            perror("pipe");
+            exit(EXIT_FAILURE);
+        }
+    }
 
-    // First child process
-    pid1 = fork();
+    pid_t pid1 = fork();
+    if (pid1 < 0)
+    {
+        perror("fork");
+        exit(EXIT_FAILURE);
+    }
+
     if (pid1 == 0)
     {
-        // Close write end of the pipe
-        close(pipefd[0]);
-
-        // Redirect stdout to the write end of the pipe
-        dup2(pipefd[1], STDOUT_FILENO);
-
-        // Close unused file descriptors
-        close(pipefd[1]);
-
-        // Execute cmd1
-         Execute_Command(cmd1, isBgProcess);
-
-
-        // Exit child process
-        exit(EXIT_SUCCESS);
+        dup2(fd[1], STDOUT_FILENO);
+        close(fd[0]);
+        close(fd[1]);
+        execv(getPathSearch(cmd1), cmd1->items);
     }
 
-    // Second child process
-    pid2 = fork();
+    pid_t pid2 = fork();
+    if (pid2 < 0)
+    {
+        perror("fork");
+        exit(EXIT_FAILURE);
+    }
+
     if (pid2 == 0)
     {
-        // Close read end of the pipe
-        close(pipefd[1]);
-
-        // Redirect stdin to the read end of the pipe
-        dup2(pipefd[0], STDIN_FILENO);
-
-        // Close unused file descriptors
-        close(pipefd[0]);
-
-        // Execute cmd2
-       Execute_Command(cmd2, isBgProcess);
-
-        // Exit child process
-        exit(EXIT_SUCCESS);
+        dup2(fd[0], STDIN_FILENO);
+        close(fd[0]);
+        close(fd[1]);
+        if (index < tokens->size)
+        {
+            dup2(fd2[1], STDOUT_FILENO);
+            close(fd2[0]);
+            close(fd2[1]);
+        }
+        execv(getPathSearch(cmd2), cmd2->items);
     }
 
-    // Close unused file descriptors in the parent process
-    close(pipefd[0]);
-    close(pipefd[1]);
+    pid_t pid3;
+    if (index < tokens->size)
+    {
+        free_tokens(cmd3);
+        cmd3 = new_tokenlist();
 
-    // Wait for both child processes to finish
-    waitpid(pid1, &status1, 0);
-    waitpid(pid2, &status2, 0);
+        for (int i = index; i < tokens->size; i++)
+        {
+            if (strcmp(tokens->items[i], "|") != 0)
+            {
+                add_token(cmd3, tokens->items[i]);
+            }
+        }
+        pid3 = fork();
+        if (pid3 < 0)
+        {
+            perror("fork");
+            exit(EXIT_FAILURE);
+        }
+        if (pid3 == 0)
+        {
+            dup2(fd2[0], STDIN_FILENO);
+            close(fd2[0]);
+            close(fd2[1]);
+            execv(getPathSearch(cmd3), cmd3->items);
+        }
+    }
 
-    // Free memory
-    free_tokens(cmd1);
-    free_tokens(cmd2);
+    char** temp = {cmd1->items[0],cmd2->items[0],NULL};
+
+    if(isBgProcess){
+        addBGProcess(pid1, temp, bgProcesses);
+        printf("[%d] %d\n", globalJobCount, pid2);
+
+        if (index < tokens->size)
+        {
+            addBGProcess(pid3, cmd3->items[0], bgProcesses);
+        }
+    }
+    close(fd[0]);
+    close(fd[1]);
+    if (index < tokens->size)
+    {
+        close(fd2[0]);
+        close(fd2[1]);
+    }
+    if(isBgProcess){
+        waitpid(pid1, NULL, WNOHANG);
+        waitpid(pid2, NULL, WNOHANG);
+        if (index < tokens->size)
+        {
+            waitpid(pid3, NULL, WNOHANG);
+        }
+    }
+    else{
+        waitpid(pid1, NULL, 0);
+        waitpid(pid2, NULL, 0);
+        if (index < tokens->size)
+        {
+            waitpid(pid3, NULL, 0);
+        }
+    }
 }
