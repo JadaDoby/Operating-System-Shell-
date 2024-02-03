@@ -94,13 +94,16 @@ int main()
         }
         else if (checkforBg)
         {
-            if(result!=NULL || result2!=NULL){
+            if (result != NULL || result2 != NULL)
+            {
                 ioRedirection(tokens, checkforBg);
             }
-            else if(hasPipe){
+            else if (hasPipe)
+            {
                 piping(tokens, checkforBg);
             }
-            else{
+            else
+            {
                 Execute_Command(tokens, checkforBg);
             }
         }
@@ -146,7 +149,7 @@ void Execute_Command(tokenlist *tokens, bool isBgProcess)
     {
         if (isBgProcess)
         {
-            char ** temp = {tokens->items[0],NULL};
+            char *temp[] = {tokens->items[0], NULL};
             waitpid(pid, &status, WNOHANG);
 
             addBGProcess(pid, temp, bgProcesses);
@@ -162,21 +165,32 @@ void Execute_Command(tokenlist *tokens, bool isBgProcess)
 // ls as
 // ls al
 
-void addBGProcess(pid_t pid, const char **command, BackgroundProcess *bgProcesses)
+void addBGProcess(pid_t pid, char **command, BackgroundProcess *bgProcesses)
 {
-     int size = 0;
-    while (command[size] != NULL) {
+    int size = 0;
+    while (command[size] != NULL)
+    {
         size++;
     }
     if (globalJobCount < 10 && command != NULL)
     {
         bgProcesses[globalJobCount].pid = pid;
 
-        for(int i = 0; i < size; i++){
-            bgProcesses[globalJobCount].command[i][0] = (char *)malloc(sizeof(char)*strlen(command[i][0]) + 1);
-            strcpy(bgProcesses[globalJobCount].command[i][0], command[i][0]);
-            ++globalJobCount;
+        // Allocate memory for the command array
+        bgProcesses[globalJobCount].command = (char **)malloc((size + 1) * sizeof(char *));
+
+        for (int i = 0; i < size; i++)
+        {
+            // Allocate memory for each command string
+            bgProcesses[globalJobCount].command[i] = (char *)malloc(strlen(command[i]) + 1);
+
+            strcpy(bgProcesses[globalJobCount].command[i], command[i]);
         }
+
+        // Set the last element of the command array to NULL
+        bgProcesses[globalJobCount].command[size] = NULL;
+
+        ++globalJobCount;
     }
     else
     {
@@ -194,7 +208,12 @@ void BackgroundProcessHelper(BackgroundProcess *bgProcesses)
         pid = waitpid(bgProcesses[i].pid, &status, WNOHANG);
         if (pid > 0)
         {
-            printf("[%d]+ done %s\n", i + 1, bgProcesses[i].command);
+            printf("[%d]+ done", i + 1);
+            for (int j = 0; bgProcesses[i].command[j] != NULL; ++j)
+            {
+                printf(" %s|", bgProcesses[i].command[j]);
+            }
+            printf("\n");
 
             if (i >= 0 && i < globalJobCount)
             {
@@ -216,7 +235,8 @@ void BackgroundProcessHelper(BackgroundProcess *bgProcesses)
 
 void jobsCommand(bool background)
 {
-    if(globalJobCount == 0){
+    if (globalJobCount == 0)
+    {
         printf("No background jobs\n");
         return;
     }
@@ -260,7 +280,7 @@ tokenlist *new_tokenlist(void)
     tokenlist *tokens = (tokenlist *)malloc(sizeof(tokenlist));
     tokens->size = 0;
     tokens->items = (char **)malloc(sizeof(char *));
-    tokens->items[0] = NULL; 
+    tokens->items[0] = NULL;
     return tokens;
 }
 
@@ -303,9 +323,9 @@ char *getPathSearch(tokenlist *cmd)
     char *path = NULL;
     path = (char *)malloc(sizeof(char) * (strlen(getenv("PATH")) + 1));
     strcpy(path, getenv("PATH"));
-    const char *pathCopy = strdup(path); 
+    char *pathCopy = strdup(path);
 
-    const char *tokens = strtok(pathCopy, ":");
+    char *tokens = strtok(pathCopy, ":");
 
     while (tokens != NULL)
     {
@@ -337,7 +357,7 @@ char *getPathSearch(tokenlist *cmd)
         {
             free(path);
             free(temp);
-            free(pathCopy);
+            free((void *)pathCopy);
             return fullPath;
         }
 
@@ -348,10 +368,9 @@ char *getPathSearch(tokenlist *cmd)
 
     printf("%s\n", "Command Not Found");
     free(path);
-    free(pathCopy);
+    free((void *)pathCopy);
     return NULL;
 }
-
 
 void expand_tildeHelper(tokenlist *tokens)
 {
@@ -377,7 +396,7 @@ char *expand_tilde(const char *token)
     else if (strncmp(token, "~/", 2) == 0)
     {
         const char *homeEnv = getenv("HOME");
-        const char *remainingPath = token + 1; 
+        const char *remainingPath = token + 1;
         int fullLength = strlen(homeEnv) + strlen(remainingPath) + 1;
         path = (char *)malloc(sizeof(char) * fullLength);
         strcpy(path, homeEnv);
@@ -395,7 +414,8 @@ char *expand_tilde(const char *token)
 void ioRedirection(tokenlist *tokens, bool isBgProcess)
 {
     int size = tokens->size;
-    if(size < 3 ){
+    if (size < 3)
+    {
         perror("Error: no file");
         return;
     }
@@ -624,15 +644,18 @@ void piping(tokenlist *tokens, bool isBgProcess)
         }
     }
 
-    char** temp = {cmd1->items[0],cmd2->items[0],NULL};
+    char *temp[] = {cmd1->items[0], cmd2->items[0], NULL};
 
-    if(isBgProcess){
+    if (isBgProcess)
+    {
         addBGProcess(pid1, temp, bgProcesses);
         printf("[%d] %d\n", globalJobCount, pid2);
 
         if (index < tokens->size)
         {
-            addBGProcess(pid3, cmd3->items[0], bgProcesses);
+            char *temp1[] = {cmd2->items[0], cmd3->items[0], NULL};
+
+            addBGProcess(pid3, temp1, bgProcesses);
         }
     }
     close(fd[0]);
@@ -642,7 +665,8 @@ void piping(tokenlist *tokens, bool isBgProcess)
         close(fd2[0]);
         close(fd2[1]);
     }
-    if(isBgProcess){
+    if (isBgProcess)
+    {
         waitpid(pid1, NULL, WNOHANG);
         waitpid(pid2, NULL, WNOHANG);
         if (index < tokens->size)
@@ -650,7 +674,8 @@ void piping(tokenlist *tokens, bool isBgProcess)
             waitpid(pid3, NULL, WNOHANG);
         }
     }
-    else{
+    else
+    {
         waitpid(pid1, NULL, 0);
         waitpid(pid2, NULL, 0);
         if (index < tokens->size)
