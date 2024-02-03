@@ -36,3 +36,4 @@ void expand_tildeHelper(tokenlist *tokens);
 void ioRedirection(tokenlist *tokens,bool isBgProcess);
 tokenlist *expandEnvVariables(tokenlist *tokens);
 void piping(tokenlist *tokens, bool isBgProcess);
+void cdCommand(tokenlist *token);
