@@ -70,6 +70,12 @@ int main()
         expand_tildeHelper(tokens);
         expandEnvVariables(tokens);
 
+         if (strcmp(tokens->items[0], "cd") == 0)
+        {
+                cdCommand(tokens);
+                continue;
+        }
+
         int hasPipe = 0;
         for (int i = 0; i < tokens->size; i++)
         {
@@ -246,9 +252,46 @@ void jobsCommand(bool background)
         {
             pid_t pid = waitpid(bgProcesses[i].pid, NULL, WNOHANG);
             const char *status = (pid == bgProcesses[i].pid) ? "Done" : "Running";
-            printf("[%d]+ %d %s\t%s\n", i + 1, bgProcesses[i].pid, status, bgProcesses[i].command);
+            printf("[%d]+ %d %s\t%s\n", i + 1, bgProcesses[i].pid, status, bgProcesses[i].command[0]);
         }
     }
+}
+
+void cdCommand(tokenlist *token) {
+    char *newDir;
+
+    if (token->size == 1) {
+        char *home = getenv("HOME");
+        newDir = strdup(home);
+        if (newDir == NULL) {
+            perror("cd");
+            return;
+        }
+    } else {
+        newDir = strdup(token->items[1]);
+        if (newDir == NULL) {
+            perror("cd");
+            return;
+        }
+    }
+
+    if (access(newDir, F_OK) != 0) {
+        fprintf(stderr, "cd: %s: No such file or directory\n", newDir);
+        free(newDir);
+        return;
+    }
+
+    if (chdir(newDir) != 0) {
+        perror("cd");
+        free(newDir);
+        return;
+    }
+
+    if (setenv("PWD", newDir, 1) != 0) {
+        perror("error");
+    }
+
+    free(newDir);
 }
 
 char *get_input(void)
