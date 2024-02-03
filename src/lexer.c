@@ -259,7 +259,10 @@ void jobsCommand(bool background)
 
 void cdCommand(tokenlist *token) {
     char *newDir;
-
+    if(token->size > 2){
+        fprintf(stderr, "cd: More than one argument\n");
+        return;
+    }
     if (token->size == 1) {
         char *home = getenv("HOME");
         newDir = strdup(home);
