@@ -3,9 +3,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
 int globalJobCount = 0;
 BackgroundProcess bgProcesses[10];
+char LastThreeCommand[3][200];
+int LastThreeCommandSize = 0;
 
 int main()
 {
@@ -75,6 +76,10 @@ int main()
                 cdCommand(tokens);
                 continue;
         }
+        if (strcmp(tokens->items[0], "exit") == 0)
+        {
+                internal_exit();
+        }
 
         int hasPipe = 0;
         for (int i = 0; i < tokens->size; i++)
@@ -128,48 +133,70 @@ int main()
     return 0;
 }
 
-void Execute_Command(tokenlist *tokens, bool isBgProcess)
-{
+
+void internal_exit() {
+    int status;
+    
+    for (int i = 0; i < globalJobCount; i++) {
+        if (bgProcesses[i].pid != 0) {
+            waitpid(bgProcesses[i].pid, &status, 0);
+        }
+    }
+
+
+    for (int i = 0; i < 3; i++) {
+        printf("%s\n", LastThreeCommand[i]);
+    }
+
+    exit(EXIT_SUCCESS);
+}
+
+void lastthree(char *command) {
+
+    strcpy(LastThreeCommand[LastThreeCommandSize%3], command);
+    LastThreeCommandSize = LastThreeCommandSize + 1;
+}
+
+void Execute_Command(tokenlist *tokens, bool isBgProcess) {
     pid_t pid;
     int status;
+
     pid = fork();
-    if (pid == 0)
-    {
+    
+    if (pid == 0) {
         char *path = getPathSearch(tokens);
-        if (path == NULL)
-        {
+        if (path == NULL) {
             exit(EXIT_FAILURE);
         }
         int execid = execv(path, tokens->items);
-        if (execid == -1)
-        {
+        if (execid == -1) {
             perror("Error");
             exit(EXIT_FAILURE);
         }
-    }
-    else if (pid < 0)
-    {
+    } else if (pid < 0) {
         perror("Error forking");
-    }
-    else
-    {
-        if (isBgProcess)
-        {
+    } else {
+        if (!isBgProcess) {
+            waitpid(pid, &status, 0);
+
+            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+                lastthree(tokens->items[0]);
+            }
+        } else {
+            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+                lastthree(tokens->items[0]);
+            }
+
             char *temp[] = {tokens->items[0], NULL};
             waitpid(pid, &status, WNOHANG);
 
             addBGProcess(pid, temp, bgProcesses);
             printf("[%d] %d\n", globalJobCount, pid);
         }
-        else
-        {
-            waitpid(pid, &status, 0);
-        }
     }
 }
 
-// ls as
-// ls al
+
 
 void addBGProcess(pid_t pid, char **command, BackgroundProcess *bgProcesses)
 {
@@ -182,18 +209,15 @@ void addBGProcess(pid_t pid, char **command, BackgroundProcess *bgProcesses)
     {
         bgProcesses[globalJobCount].pid = pid;
 
-        // Allocate memory for the command array
         bgProcesses[globalJobCount].command = (char **)malloc((size + 1) * sizeof(char *));
 
         for (int i = 0; i < size; i++)
         {
-            // Allocate memory for each command string
             bgProcesses[globalJobCount].command[i] = (char *)malloc(strlen(command[i]) + 1);
 
             strcpy(bgProcesses[globalJobCount].command[i], command[i]);
         }
 
-        // Set the last element of the command array to NULL
         bgProcesses[globalJobCount].command[size] = NULL;
 
         ++globalJobCount;
@@ -706,6 +730,7 @@ void piping(tokenlist *tokens, bool isBgProcess)
     }
     close(fd[0]);
     close(fd[1]);
+    lastthree(cmd2->items[0]);
     if (index < tokens->size)
     {
         close(fd2[0]);
