@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
 int globalJobCount = 0;
 BackgroundProcess bgProcesses[10];
 char LastThreeCommand[3][200];
@@ -12,33 +13,21 @@ int main()
 {
     while (1)
     {
-        // Getting username
         char *username = (char *)malloc(sizeof(char) * (strlen(getenv("USER")) + 1));
         strcpy(username, getenv("USER"));
 
-        if (username != NULL)
+        if (username == NULL)
         {
-            // It's printing out later
-        }
-        else
-        {
-            perror("Error getting username");
+            perror("Error- Getting username");
             return 1;
         }
 
-        // Getting machine name - using gethostname function
         char machine[300];
-        if (gethostname(machine, sizeof(machine)) == 0)
+        if (gethostname(machine, 300) == -1)
         {
-            // It's printing out later
+            perror("Error - Getting machine name");
+            return 1;
         }
-        else
-        {
-            perror("Error- Getting machine name");
-            return 1; // indicates failure
-        }
-
-        // Getting working directory
         char cwd[1024];
         if (getcwd(cwd, sizeof(cwd)) == 0)
         {
@@ -46,14 +35,11 @@ int main()
             return 1;
         }
 
-        // Print the prompt
         printf("%s@%s:%s>", username, machine, cwd);
 
-        // Get user input and tokenize it
         char *input = get_input();
         char checkforIO = '<';
         char checkforIO2 = '>';
-        char checkfortilde = '~';
         bool checkforBg = false;
         const char *result = strchr(input, checkforIO);
         const char *result2 = strchr(input, checkforIO2);
@@ -64,21 +50,18 @@ int main()
             input[strlen(input) - 1] = '\0';
         }
 
-        // printf("whole input: %s\n", input);
-
-        // Expand environment variables in tokens
         tokenlist *tokens = get_tokens(input);
         expand_tildeHelper(tokens);
         expandEnvVariables(tokens);
 
-         if (strcmp(tokens->items[0], "cd") == 0)
+        if (strcmp(tokens->items[0], "cd") == 0)
         {
-                cdCommand(tokens);
-                continue;
+            cdCommand(tokens);
+            continue;
         }
         if (strcmp(tokens->items[0], "exit") == 0)
         {
-                internal_exit();
+            internal_exit();
         }
 
         int hasPipe = 0;
@@ -91,7 +74,7 @@ int main()
             }
         }
 
-        if (result != NULL || result2 != NULL && !checkforBg)
+        if ((result != NULL || result2 != NULL) && !checkforBg)
         {
             ioRedirection(tokens, checkforBg);
         }
@@ -123,7 +106,6 @@ int main()
             Execute_Command(tokens, checkforBg);
         }
 
-        // Free resources
         free(username);
         free(input);
         free_tokens(tokens);
@@ -133,57 +115,80 @@ int main()
     return 0;
 }
 
-
-void internal_exit() {
+void internal_exit()
+{
     int status;
-    
-    for (int i = 0; i < globalJobCount; i++) {
-        if (bgProcesses[i].pid != 0) {
+
+    for (int i = 0; i < globalJobCount; i++)
+    {
+        if (bgProcesses[i].pid != 0)
+        {
             waitpid(bgProcesses[i].pid, &status, 0);
         }
     }
 
-
-    for (int i = 0; i < 3; i++) {
-        printf("%s\n", LastThreeCommand[i]);
+    if (LastThreeCommandSize > 0)
+    {
+        for (int i = 0; i < LastThreeCommandSize; i++)
+        {
+            printf("%s\n", LastThreeCommand[i]);
+        }
+    }
+    else
+    {
+        printf("No commands executed\n");
     }
 
     exit(EXIT_SUCCESS);
 }
 
-void lastthree(char *command) {
+void lastthree(char *command)
+{
 
-    strcpy(LastThreeCommand[LastThreeCommandSize%3], command);
+    strcpy(LastThreeCommand[LastThreeCommandSize % 3], command);
     LastThreeCommandSize = LastThreeCommandSize + 1;
 }
 
-void Execute_Command(tokenlist *tokens, bool isBgProcess) {
+void Execute_Command(tokenlist *tokens, bool isBgProcess)
+{
     pid_t pid;
     int status;
 
     pid = fork();
-    
-    if (pid == 0) {
+
+    if (pid == 0)
+    {
         char *path = getPathSearch(tokens);
-        if (path == NULL) {
+        if (path == NULL)
+        {
             exit(EXIT_FAILURE);
         }
         int execid = execv(path, tokens->items);
-        if (execid == -1) {
+        if (execid == -1)
+        {
             perror("Error");
             exit(EXIT_FAILURE);
         }
-    } else if (pid < 0) {
+    }
+    else if (pid < 0)
+    {
         perror("Error forking");
-    } else {
-        if (!isBgProcess) {
+    }
+    else
+    {
+        if (!isBgProcess)
+        {
             waitpid(pid, &status, 0);
 
-            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+            if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+            {
                 lastthree(tokens->items[0]);
             }
-        } else {
-            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+        }
+        else
+        {
+            if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+            {
                 lastthree(tokens->items[0]);
             }
 
@@ -195,8 +200,6 @@ void Execute_Command(tokenlist *tokens, bool isBgProcess) {
         }
     }
 }
-
-
 
 void addBGProcess(pid_t pid, char **command, BackgroundProcess *bgProcesses)
 {
@@ -236,17 +239,18 @@ void BackgroundProcessHelper(BackgroundProcess *bgProcesses)
     for (int i = 0; i < globalJobCount; ++i)
     {
         pid = waitpid(bgProcesses[i].pid, &status, WNOHANG);
+
         if (pid > 0)
         {
-            printf("[%d]+ done", i + 1);
-            for (int j = 0; bgProcesses[i].command[j] != NULL; ++j)
+            if (WIFEXITED(status))
             {
-                printf(" %s|", bgProcesses[i].command[j]);
-            }
-            printf("\n");
+                printf("[%d]+ done", i + 1);
+                for (int j = 0; bgProcesses[i].command[j] != NULL; ++j)
+                {
+                    printf(" %s |", bgProcesses[i].command[j]);
+                }
+                printf("\n");
 
-            if (i >= 0 && i < globalJobCount)
-            {
                 free(bgProcesses[i].command);
                 for (int j = i; j < globalJobCount - 1; ++j)
                 {
@@ -255,9 +259,13 @@ void BackgroundProcessHelper(BackgroundProcess *bgProcesses)
                 --globalJobCount;
             }
         }
-        else if (pid < 0)
+        else if (pid == 0)
         {
-            perror("Error waiting for background process");
+            continue;
+        }
+        else
+        {
+            perror("waitpid");
             return;
         }
     }
@@ -274,48 +282,56 @@ void jobsCommand(bool background)
     {
         if (bgProcesses[i].pid != 0)
         {
-            pid_t pid = waitpid(bgProcesses[i].pid, NULL, WNOHANG);
-            const char *status = (pid == bgProcesses[i].pid) ? "Done" : "Running";
-            printf("[%d]+ %d %s\t%s\n", i + 1, bgProcesses[i].pid, status, bgProcesses[i].command[0]);
+            printf("[%d]+ %d", i + 1, bgProcesses[i].pid);
+            for (int j = 0; bgProcesses[i].command[j] != NULL; ++j)
+            {
+                printf(" %s", bgProcesses[i].command[j]);
+            }
+            printf("\n");
         }
     }
 }
 
-void cdCommand(tokenlist *token) {
+void cdCommand(tokenlist *token)
+{
     char *newDir;
-    if(token->size > 2){
+    if (token->size > 2)
+    {
         fprintf(stderr, "cd: More than one argument\n");
         return;
     }
-    if (token->size == 1) {
+    if (token->size == 1)
+    {
         char *home = getenv("HOME");
         newDir = strdup(home);
-        if (newDir == NULL) {
+        if (newDir == NULL)
+        {
             perror("cd");
             return;
         }
-    } else {
+    }
+    else
+    {
         newDir = strdup(token->items[1]);
-        if (newDir == NULL) {
+        if (newDir == NULL)
+        {
             perror("cd");
             return;
         }
     }
 
-    if (access(newDir, F_OK) != 0) {
+    if (access(newDir, F_OK) != 0)
+    {
         fprintf(stderr, "cd: %s: No such file or directory\n", newDir);
         free(newDir);
         return;
     }
 
-    if (chdir(newDir) != 0) {
+    if (chdir(newDir) != 0)
+    {
         perror("cd");
         free(newDir);
         return;
-    }
-
-    if (setenv("PWD", newDir, 1) != 0) {
-        perror("error");
     }
 
     free(newDir);
@@ -393,7 +409,7 @@ char *getPathSearch(tokenlist *cmd)
     char *path = NULL;
     path = (char *)malloc(sizeof(char) * (strlen(getenv("PATH")) + 1));
     strcpy(path, getenv("PATH"));
-    char *pathCopy = strdup(path);
+    char *pathCopy = (char *)strdup(path);
 
     char *tokens = strtok(pathCopy, ":");
 
@@ -472,6 +488,7 @@ char *expand_tilde(const char *token)
         strcpy(path, homeEnv);
         strcat(path, remainingPath);
     }
+
     else
     {
         path = strdup(token);
@@ -596,8 +613,10 @@ tokenlist *expandEnvVariables(tokenlist *tokens)
             temp = (char *)malloc(sizeof(char) * (strlen(getenv(tokens->items[i] + 1)) + 1));
             strcpy(temp, getenv(tokens->items[i] + 1));
             tokens->items[i] = temp;
+            temp = NULL;
         }
     }
+    free(temp);
     return tokens;
 }
 
